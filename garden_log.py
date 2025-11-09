@@ -6,20 +6,23 @@ from copy import deepcopy
 st.set_page_config(page_title="🌿 My Garden Log", layout="wide")
 
 # --- Initialization ---
+
 if "garden_data" not in st.session_state:
     st.session_state.garden_data = {
         "inventory": {"vegetables": [], "fruits": []},
         "logs": [],
         "layout": {}
     }
+    st.session_state["is_clean"] = True
 
 # --- File Upload ---
 st.sidebar.header("📁 Data Management")
 uploaded_file = st.sidebar.file_uploader("Upload Garden JSON", type="json")
 
-if uploaded_file and "garden_data" not in st.session_state:
+if uploaded_file and st.session_state["is_clean"] :
     st.session_state.garden_data = json.load(uploaded_file)
     st.sidebar.success("Garden data loaded successfully!")
+    st.session_state["is_clean"] = False
 
 # --- Page Selection ---
 page = st.sidebar.radio(
@@ -202,6 +205,6 @@ elif page == "Garden Layout":
 st.sidebar.download_button(
     label="💾 Download Garden Data",
     data=json.dumps(st.session_state.garden_data, indent=2),
-    file_name="garden_log.json",
+    file_name=f"garden_log_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.json",
     mime="application/json"
 )
