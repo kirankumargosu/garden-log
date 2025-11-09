@@ -17,7 +17,7 @@ if "garden_data" not in st.session_state:
 st.sidebar.header("📁 Data Management")
 uploaded_file = st.sidebar.file_uploader("Upload Garden JSON", type="json")
 
-if uploaded_file:
+if uploaded_file and "garden_data" not in st.session_state:
     st.session_state.garden_data = json.load(uploaded_file)
     st.sidebar.success("Garden data loaded successfully!")
 
