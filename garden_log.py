@@ -9,7 +9,7 @@ st.set_page_config(page_title="🌿 My Garden Log", layout="wide")
 
 if "garden_data" not in st.session_state:
     st.session_state.garden_data = {
-        "inventory": {"vegetables": [], "greens": [], "fruits": [], "flowers: []},
+        "inventory": {"vegetables": [], "greens": [], "fruits": [], "flowers": []},
         "logs": [],
         "layout": {}
     }
