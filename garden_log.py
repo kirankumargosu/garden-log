@@ -27,7 +27,7 @@ if uploaded_file and st.session_state["is_clean"] :
 # --- Page Selection ---
 page = st.sidebar.radio(
     "Navigate",
-    ["Inventory", "Daily Logs", "Reports", "Garden Layout"]
+    ["Daily Logs", "Reports", "Garden Layout", "Inventory"]
 )
 
 # =======================================================
