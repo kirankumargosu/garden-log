@@ -9,7 +9,7 @@ st.set_page_config(page_title="🌿 My Garden Log", layout="wide")
 
 if "garden_data" not in st.session_state:
     st.session_state.garden_data = {
-        "inventory": {"vegetables": [], "fruits": []},
+        "inventory": {"vegetables": [], "greens": [], "fruits": [], "flowers: []},
         "logs": [],
         "layout": {}
     }
@@ -39,11 +39,11 @@ if page == "Inventory":
 
     with col1:
         st.subheader("Add Vegetable / Fruit")
-        item_type = st.selectbox("Type", ["Vegetable", "Fruit"])
+        item_type = st.selectbox("Type", ["Vegetables", "Greens", "Fruits", "Flowers"])
         item_name = st.text_input("Name of the plant")
         if st.button("Add to Inventory"):
             if item_name:
-                st.session_state.garden_data["inventory"][item_type.lower() + "s"].append(item_name)
+                st.session_state.garden_data["inventory"][item_type.lower()].append(item_name)
                 st.success(f"Added {item_name} to {item_type.lower()} inventory")
 
     with col2:
