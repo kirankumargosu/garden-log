@@ -59,8 +59,11 @@ elif page == "Daily Logs":
     sections = list(st.session_state.garden_data.get("layout", {}).keys()) or [
         "Indoor", "Backyard", "Front Garden", "Raised Beds"
     ]
-    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"]
-
+    plants = st.session_state.garden_data["inventory"]["vegetables"] 
+           + st.session_state.garden_data["inventory"]["fruits"]
+           + st.session_state.garden_data["inventory"]["greens"] 
+           + st.session_state.garden_data["inventory"]["flowers"]
+    
     with st.form("log_form"):
         date = st.date_input("Date", datetime.date.today())
         section = st.selectbox("Section", sections)
