@@ -15,6 +15,21 @@ if "garden_data" not in st.session_state:
     }
     st.session_state["is_clean"] = True
 
+    import random
+
+    # --- Initialize batch color map ---
+    if "batch_colors" not in st.session_state:
+        st.session_state.batch_colors = {}
+
+    # --- Helper to assign consistent color to batch keys ---
+    def get_color_for_key(batch_key):
+        if batch_key not in st.session_state.batch_colors:
+            # Generate a random pleasant color
+            hue = random.randint(0, 360)
+            color = f"hsl({hue}, 70%, 70%)"
+            st.session_state.batch_colors[batch_key] = color
+        return st.session_state.batch_colors[batch_key]
+
 # --- File Upload ---
 st.sidebar.header("📁 Data Management")
 uploaded_file = st.sidebar.file_uploader("Upload Garden JSON", type="json")
@@ -66,8 +81,17 @@ elif page == "Daily Logs":
         section = st.selectbox("Section", sections)
         plant = st.selectbox("Plant", plants)
         action = st.selectbox("Action", ["Sown", "Transplanted", "Watered", "Fertilized", "Measured", "Harvested"])
+
+        # --- Existing batch keys ---
+        existing_keys = sorted(set([log["batch_key"] for log in st.session_state.garden_data["logs"]]))
         default_key = f"{plant}-Set-{date}"
-        batch_key = st.text_input("Batch Key", default_key)
+
+        use_existing = st.checkbox("Select existing batch key?")
+        if use_existing and existing_keys:
+            batch_key = st.selectbox("Choose Batch Key", existing_keys)
+        else:
+            batch_key = st.text_input("Create / Edit Batch Key", default_key) 
+        
         height = st.number_input("Height (cm)", min_value=0.0, step=0.1)
         moisture = st.number_input("Moisture (%)", min_value=0.0, max_value=100.0, step=1.0)
         notes = st.text_area("Notes")
@@ -86,6 +110,7 @@ elif page == "Daily Logs":
                 "next_visit": str(next_visit)
             }
             st.session_state.garden_data["logs"].append(log_entry)
+            get_color_for_key(batch_key)
             st.success("✅ Log entry added!")
 
     # --- View / Edit Logs ---
@@ -186,17 +211,34 @@ elif page == "Garden Layout":
             section_data["grid"] = [["" for _ in range(cols)] for _ in range(rows)]
 
         st.markdown("### 🌿 Click below to assign what’s sown in each tile")
+        
+    batch_keys = sorted(set([log["batch_key"] for log in st.session_state.garden_data["logs"]]))
 
-        plants = [""] + st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"]
-        for r in range(section_data["rows"]):
-            cols_container = st.columns(section_data["cols"])
-            for c in range(section_data["cols"]):
-                with cols_container[c]:
-                    current = section_data["grid"][r][c]
-                    section_data["grid"][r][c] = st.selectbox(
-                        f"({r+1},{c+1})", plants, index=plants.index(current) if current in plants else 0, key=f"{selected_section}_{r}_{c}"
+    for r in range(section_data["rows"]):
+        cols_container = st.columns(section_data["cols"])
+        for c in range(section_data["cols"]):
+            with cols_container[c]:
+                current_values = section_data["grid"][r][c]
+                if not isinstance(current_values, list):
+                    current_values = [current_values] if current_values else []
+    
+                # Multi-select batch keys for this tile
+                selected_keys = st.multiselect(
+                    f"({r+1},{c+1})",
+                    options=batch_keys,
+                    default=current_values,
+                    key=f"{selected_section}_{r}_{c}"
+                )
+                section_data["grid"][r][c] = selected_keys
+    
+                # Display color tags for selected batch keys
+                if selected_keys:
+                    color_tags = "".join(
+                        f'<span style="background-color:{get_color_for_key(k)}; '
+                        f'padding:3px 6px; border-radius:4px; margin:2px; display:inline-block;">{k}</span>'
+                        for k in selected_keys
                     )
-
+                    st.markdown(color_tags, unsafe_allow_html=True)
         st.success("✅ Layout updated! Don’t forget to download JSON to save it permanently.")
 
 # =======================================================
