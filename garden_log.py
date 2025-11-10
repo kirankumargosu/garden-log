@@ -11,7 +11,7 @@ st.set_page_config(page_title="🌿 My Garden Log", layout="wide")
 # ---------- INIT DATA ----------
 if "garden_data" not in st.session_state:
     st.session_state.garden_data = {
-        "inventory": {"vegetables": [], "fruits": []},
+        "inventory": {"vegetables": [], "fruits": [], "greens": [], "flowers": []},
         "logs": [],
         "layout": {}
     }
@@ -177,7 +177,9 @@ if page == "📊 Reports":
 elif page == "📝 Daily Log":
     st.header("📝 Daily Log Entry")
     sections = ["Indoor", "Backyard", "Front Garden", "Raised Beds"]
-    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"]
+    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"] +
+    + st.session_state.garden_data["inventory"]["flowers"]
+    + st.session_state.garden_data["inventory"]["greens"]
 
     with st.form("log_form"):
         date = st.date_input("Date", datetime.date.today())
@@ -196,7 +198,7 @@ elif page == "📝 Daily Log":
         height = st.number_input("Height (cm)", min_value=0.0, step=0.1)
         moisture = st.number_input("Moisture (%)", min_value=0.0, max_value=100.0, step=1.0)
         notes = st.text_area("Notes")
-        next_visit = st.date_input("Next Visit / Reminder", date + datetime.timedelta(days=3))
+        next_visit = st.date_input("Next Visit / Reminder", date + datetime.timedelta(days=7))
 
         submitted = st.form_submit_button("Add Log Entry")
         if submitted:
@@ -206,7 +208,7 @@ elif page == "📝 Daily Log":
                 "plant": plant,
                 "action": action,
                 "batch_key": batch_key,
-                "metrics": {"height_cm": height, "moisture_%": moisture},
+                "metrics": {"height_cm": height},
                 "notes": notes,
                 "next_visit": str(next_visit)
             }
@@ -335,12 +337,12 @@ elif page == "🌱 Inventory":
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Add Vegetable / Fruit")
-        item_type = st.selectbox("Type", ["Vegetable", "Fruit"])
+        st.subheader("Add New Plant")
+        item_type = st.selectbox("Type", ["Vegetables", "Greens", "Fruits", "Flowers"])
         item_name = st.text_input("Name of the plant")
         if st.button("Add to Inventory"):
             if item_name:
-                st.session_state.garden_data["inventory"][item_type.lower() + "s"].append(item_name)
+                st.session_state.garden_data["inventory"][item_type.lower()].append(item_name)
                 st.success(f"Added {item_name} to {item_type.lower()} inventory")
 
     with col2:
