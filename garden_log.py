@@ -177,9 +177,7 @@ if page == "📊 Reports":
 elif page == "📝 Daily Log":
     st.header("📝 Daily Log Entry")
     sections = ["Indoor", "Backyard", "Front Garden", "Raised Beds"]
-    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"]
-    + st.session_state.garden_data["inventory"]["flowers"]
-    + st.session_state.garden_data["inventory"]["greens"]
+    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"] + st.session_state.garden_data["inventory"]["flowers"] + st.session_state.garden_data["inventory"]["greens"]
 
     with st.form("log_form"):
         date = st.date_input("Date", datetime.date.today())
