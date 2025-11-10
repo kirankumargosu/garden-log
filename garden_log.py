@@ -1,110 +1,211 @@
 import streamlit as st
 import json
 import datetime
-from copy import deepcopy
+import random
+import pandas as pd
+import plotly.express as px
 
+# ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="🌿 My Garden Log", layout="wide")
 
-# --- Initialization ---
-
+# ---------- INIT DATA ----------
 if "garden_data" not in st.session_state:
     st.session_state.garden_data = {
-        "inventory": {"vegetables": [], "greens": [], "fruits": [], "flowers": []},
+        "inventory": {"vegetables": [], "fruits": []},
         "logs": [],
         "layout": {}
     }
     st.session_state["is_clean"] = True
 
-    import random
+if "batch_colors" not in st.session_state:
+    st.session_state.batch_colors = {}
 
-    # --- Initialize batch color map ---
-    if "batch_colors" not in st.session_state:
-        st.session_state.batch_colors = {}
+# ---------- HELPER FUNCTIONS ----------
+def get_color_for_key(batch_key):
+    if batch_key not in st.session_state.batch_colors:
+        hue = random.randint(0, 360)
+        color = f"hsl({hue}, 70%, 70%)"
+        st.session_state.batch_colors[batch_key] = color
+    return st.session_state.batch_colors[batch_key]
 
-    # --- Helper to assign consistent color to batch keys ---
-    def get_color_for_key(batch_key):
-        if batch_key not in st.session_state.batch_colors:
-            # Generate a random pleasant color
-            hue = random.randint(0, 360)
-            color = f"hsl({hue}, 70%, 70%)"
-            st.session_state.batch_colors[batch_key] = color
-        return st.session_state.batch_colors[batch_key]
-
-# --- File Upload ---
-st.sidebar.header("📁 Data Management")
-uploaded_file = st.sidebar.file_uploader("Upload Garden JSON", type="json")
-
-if uploaded_file and st.session_state["is_clean"] :
-    st.session_state.garden_data = json.load(uploaded_file)
-    st.sidebar.success("Garden data loaded successfully!")
-    st.session_state["is_clean"] = False
-
-# --- Page Selection ---
+# ---------- SIDEBAR ----------
+st.sidebar.header("Navigation")
 page = st.sidebar.radio(
-    "Navigate",
-    ["Daily Logs", "Reports", "Garden Layout", "Inventory"]
+    "Go to:",
+    ["📊 Reports", "📝 Daily Log", "🧩 Garden Layout", "🌱 Inventory", "🔧 JSON Editor"]
 )
 
-# =======================================================
-# 🥬 INVENTORY PAGE
-# =======================================================
-if page == "Inventory":
-    st.header("🌱 Garden Inventory")
-    col1, col2 = st.columns(2)
+st.sidebar.divider()
+st.sidebar.header("Data Management")
+uploaded_file = st.sidebar.file_uploader("Upload Garden JSON", type="json")
+if uploaded_file and st.session_state["is_clean"]:
+    uploaded_data = json.load(uploaded_file)
+    st.session_state.garden_data = {k:v for k,v in uploaded_data.items() if k != "batch_colors"}
+    if "batch_colors" in uploaded_data:
+        st.session_state.batch_colors.update(uploaded_data["batch_colors"])
+    st.sidebar.success("Garden data loaded!")
+    st.session_state["is_clean"] = False
 
-    with col1:
-        st.subheader("Add Vegetable / Fruit")
-        item_type = st.selectbox("Type", ["Vegetables", "Greens", "Fruits", "Flowers"])
-        item_name = st.text_input("Name of the plant")
-        if st.button("Add to Inventory"):
-            if item_name:
-                st.session_state.garden_data["inventory"][item_type.lower()].append(item_name)
-                st.success(f"Added {item_name} to {item_type.lower()} inventory")
+export_data = st.session_state.garden_data.copy()
+export_data["batch_colors"] = st.session_state.batch_colors
+st.sidebar.download_button(
+    "💾 Download Garden Data",
+    data=json.dumps(export_data, indent=2),
+    file_name="garden_log.json",
+    mime="application/json"
+)
 
-    with col2:
-        st.subheader("Current Inventory")
-        st.json(st.session_state.garden_data["inventory"])
+# ----------------------------------------------------------------
+# 📊 PAGE 1: REPORTS
+# ----------------------------------------------------------------
+if page == "📊 Reports":
+    st.header("📊 Batch Report & Timeline")
+    logs = st.session_state.garden_data.get("logs", [])
+    if not logs:
+        st.info("No logs yet. Add some entries first.")
+    else:
+        batch_keys = sorted(set(log["batch_key"] for log in logs))
+        plants = sorted(set(log["plant"] for log in logs))
+        sections = sorted(set(log["section"] for log in logs))
 
-# =======================================================
-# ✍️ DAILY LOG PAGE
-# =======================================================
-elif page == "Daily Logs":
+        st.subheader("🔍 Filters")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            selected_batches = st.multiselect("Batch Keys", ["All"] + batch_keys, default=["All"])
+        with col2:
+            selected_plant = st.multiselect("Plant", ["All"] + plants, default=["All"])
+        with col3:
+            selected_section = st.multiselect("Section", ["All"] + sections, default=["All"])
+
+        all_dates = sorted([datetime.date.fromisoformat(log["date"]) for log in logs])
+        start_date = st.date_input("From Date", all_dates[0] if all_dates else datetime.date.today())
+        end_date = st.date_input("To Date", all_dates[-1] if all_dates else datetime.date.today())
+
+        # Filter logs
+        filtered_logs = []
+        for log in logs:
+            log_date = datetime.date.fromisoformat(log["date"])
+            if not (start_date <= log_date <= end_date):
+                continue
+            if "All" not in selected_batches and log["batch_key"] not in selected_batches:
+                continue
+            if "All" not in selected_plant and log["plant"] not in selected_plant:
+                continue
+            if "All" not in selected_section and log["section"] not in selected_section:
+                continue
+            filtered_logs.append(log)
+
+        if not filtered_logs:
+            st.warning("No logs match your filters.")
+        else:
+            filtered_logs = sorted(filtered_logs, key=lambda x: x["date"])
+            df = pd.DataFrame(filtered_logs)
+            df["Date"] = pd.to_datetime(df["date"])
+
+            # Select batch to highlight in layout
+            all_batch_keys = sorted(set(log["batch_key"] for log in filtered_logs))
+            selected_batch_for_highlight = st.selectbox(
+                "Select a batch to highlight in layout:",
+                ["None"] + all_batch_keys,
+                index=0
+            )
+            st.session_state.selected_batch = selected_batch_for_highlight if selected_batch_for_highlight != "None" else None
+
+            # Timeline list view
+            st.subheader("📅 Filtered Logs Timeline")
+            batch_groups = {}
+            for log in filtered_logs:
+                batch_groups.setdefault(log["batch_key"], []).append(log)
+
+            for batch_key, logs_list in batch_groups.items():
+                color = get_color_for_key(batch_key)
+                st.markdown(f"<h4 style='color:{color};'>🌿 {batch_key}</h4>", unsafe_allow_html=True)
+                for log in sorted(logs_list, key=lambda x: x["date"]):
+                    st.markdown(
+                        f"<div style='border-left:5px solid {color}; padding:6px 10px; margin:6px;'>"
+                        f"<b>{log['date']}</b> — {log['action']} in <b>{log['section']}</b><br>"
+                        f"<i>{log['notes']}</i><br>"
+                        f"<small>Height: {log['metrics'].get('height_cm', '—')} cm, "
+                        f"Moisture: {log['metrics'].get('moisture_%', '—')}%</small>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+
+            # Summary metrics
+            st.subheader("📈 Summary Metrics")
+            avg_height = sum(l["metrics"].get("height_cm", 0) for l in filtered_logs if l["metrics"].get("height_cm")) / max(1, sum(1 for l in filtered_logs if l["metrics"].get("height_cm")))
+            avg_moisture = sum(l["metrics"].get("moisture_%", 0) for l in filtered_logs if l["metrics"].get("moisture_%")) / max(1, sum(1 for l in filtered_logs if l["metrics"].get("moisture_%")))
+            st.write(f"**Average Height:** {avg_height:.1f} cm")
+            st.write(f"**Average Moisture:** {avg_moisture:.1f}%")
+
+            # Gantt Chart
+            st.subheader("📊 Gantt-Style Plant Lifecycle")
+            gantt_rows = []
+            for batch_key, group in df.groupby("batch_key"):
+                batch_logs = group.sort_values("Date")
+                for i, row in batch_logs.iterrows():
+                    start_date = row["Date"]
+                    next_logs = batch_logs[batch_logs["Date"] > start_date]
+                    end_date = next_logs.iloc[0]["Date"] if not next_logs.empty else start_date + pd.Timedelta(days=1)
+                    gantt_rows.append({
+                        "Batch Key": batch_key,
+                        "Action": row["action"],
+                        "Start": start_date,
+                        "Finish": end_date,
+                        "Section": row["section"],
+                        "Notes": row["notes"]
+                    })
+
+            gantt_df = pd.DataFrame(gantt_rows)
+            color_map = {k: get_color_for_key(k) for k in gantt_df["Batch Key"].unique()}
+            fig = px.timeline(
+                gantt_df,
+                x_start="Start",
+                x_end="Finish",
+                y="Batch Key",
+                color="Batch Key",
+                hover_data=["Action", "Section", "Notes"],
+                color_discrete_map=color_map
+            )
+            fig.update_yaxes(autorange="reversed")
+            fig.update_layout(height=500, margin=dict(l=40, r=20, t=30, b=20), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+# ----------------------------------------------------------------
+# 📝 PAGE 2: DAILY LOG
+# ----------------------------------------------------------------
+elif page == "📝 Daily Log":
     st.header("📝 Daily Log Entry")
+    sections = ["Indoor", "Backyard", "Front Garden", "Raised Beds"]
+    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"]
 
-    sections = list(st.session_state.garden_data.get("layout", {}).keys()) or [
-        "Indoor", "Backyard", "Front Garden", "Raised Beds"
-    ]
-    plants = st.session_state.garden_data["inventory"]["vegetables"] + st.session_state.garden_data["inventory"]["fruits"] + st.session_state.garden_data["inventory"]["greens"] + st.session_state.garden_data["inventory"]["flowers"]
-    
     with st.form("log_form"):
         date = st.date_input("Date", datetime.date.today())
         section = st.selectbox("Section", sections)
         plant = st.selectbox("Plant", plants)
         action = st.selectbox("Action", ["Sown", "Transplanted", "Watered", "Fertilized", "Measured", "Harvested"])
 
-        # --- Existing batch keys ---
         existing_keys = sorted(set([log["batch_key"] for log in st.session_state.garden_data["logs"]]))
         default_key = f"{plant}-Set-{date}"
-
         use_existing = st.checkbox("Select existing batch key?")
         if use_existing and existing_keys:
             batch_key = st.selectbox("Choose Batch Key", existing_keys)
         else:
-            batch_key = st.text_input("Create / Edit Batch Key", default_key) 
-        
+            batch_key = st.text_input("Create / Edit Batch Key", default_key)
+
         height = st.number_input("Height (cm)", min_value=0.0, step=0.1)
         moisture = st.number_input("Moisture (%)", min_value=0.0, max_value=100.0, step=1.0)
         notes = st.text_area("Notes")
         next_visit = st.date_input("Next Visit / Reminder", date + datetime.timedelta(days=3))
-        submitted = st.form_submit_button("Add Log Entry")
 
+        submitted = st.form_submit_button("Add Log Entry")
         if submitted:
             log_entry = {
                 "date": str(date),
                 "section": section,
                 "plant": plant,
-                "batch_key": batch_key,
                 "action": action,
+                "batch_key": batch_key,
                 "metrics": {"height_cm": height, "moisture_%": moisture},
                 "notes": notes,
                 "next_visit": str(next_visit)
@@ -113,107 +214,74 @@ elif page == "Daily Logs":
             get_color_for_key(batch_key)
             st.success("✅ Log entry added!")
 
-    # --- View / Edit Logs ---
-    st.subheader("📖 All Logs")
-
+    st.subheader("📖 Existing Logs")
     if st.session_state.garden_data["logs"]:
         for i, log in enumerate(reversed(st.session_state.garden_data["logs"])):
             idx = len(st.session_state.garden_data["logs"]) - 1 - i
-            with st.expander(f"{log['date']} | {log['plant']} | {log['batch_key']} | {log['action']}"):
-                edited_log = deepcopy(log)
-
-                st.markdown("### ✏️ Edit Log Entry")
-
-                colA, colB = st.columns(2)
-                with colA:
-                    edited_log["date"] = str(st.date_input("Date", datetime.date.fromisoformat(log["date"]), key=f"date_{i}"))
-                    edited_log["section"] = st.text_input("Section", log["section"], key=f"sec_{i}")
-                    edited_log["plant"] = st.text_input("Plant", log["plant"], key=f"plant_{i}")
-                    edited_log["batch_key"] = st.text_input("Batch Key", log["batch_key"], key=f"key_{i}")
-                    edited_log["action"] = st.text_input("Action", log["action"], key=f"act_{i}")
-                with colB:
-                    edited_log["metrics"]["height_cm"] = st.number_input(
-                        "Height (cm)", min_value=0.0, step=0.1, value=log["metrics"].get("height_cm", 0.0), key=f"h_{i}"
-                    )
-                    edited_log["metrics"]["moisture_%"] = st.number_input(
-                        "Moisture (%)", min_value=0.0, max_value=100.0, step=1.0,
-                        value=log["metrics"].get("moisture_%", 0.0), key=f"m_{i}"
-                    )
-                    edited_log["next_visit"] = str(st.date_input(
-                        "Next Visit", datetime.date.fromisoformat(log["next_visit"]), key=f"nv_{i}"
-                    ))
-
-                edited_log["notes"] = st.text_area("Notes", log["notes"], key=f"notes_{i}")
-
-                colC1, colC2 = st.columns(2)
-                with colC1:
-                    if st.button("💾 Save Edit", key=f"save_{i}"):
-                        st.session_state.garden_data["logs"][idx] = edited_log
-                        st.success("✅ Log updated!")
-
-                with colC2:
-                    if st.button("🗑️ Delete Log", key=f"del_{i}"):
+            with st.expander(f"{log['date']} - {log['plant']} ({log['action']})"):
+                edited = st.text_area("Edit Log (JSON)", json.dumps(log, indent=2), key=f"edit_{idx}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Save Edit", key=f"save_{idx}"):
+                        try:
+                            st.session_state.garden_data["logs"][idx] = json.loads(edited)
+                            st.success("Saved!")
+                        except json.JSONDecodeError as e:
+                            st.error(f"Invalid JSON: {e}")
+                with col2:
+                    if st.button("🗑 Delete", key=f"delete_{idx}"):
                         st.session_state.garden_data["logs"].pop(idx)
-                        st.warning("🗑️ Log deleted!")
+                        st.warning("Deleted entry.")
                         st.experimental_rerun()
-
     else:
         st.info("No logs yet! Add one above.")
 
-# =======================================================
-# 📈 REPORT PAGE
-# =======================================================
-elif page == "Reports":
-    st.header("📈 Garden Timeline Report")
+# ----------------------------------------------------------------
+# 🧩 PAGE 3: GARDEN LAYOUT
+# ----------------------------------------------------------------
+elif page == "🧩 Garden Layout":
+    st.header("🧩 Design Your Garden Layout")
+    sections = ["Indoor", "Backyard", "Front Garden", "Raised Beds"]
+    selected_section = st.selectbox("Select Section", sections)
 
-    all_keys = sorted(set([log["batch_key"] for log in st.session_state.garden_data["logs"]]))
-    if not all_keys:
-        st.info("No logs to report yet.")
-    else:
-        selected_key = st.selectbox("Select Batch Key", all_keys)
+    if selected_section not in st.session_state.garden_data["layout"]:
+        st.session_state.garden_data["layout"][selected_section] = {"rows": 3, "cols": 3, "grid": [[[] for _ in range(3)] for _ in range(3)]}
 
-        logs = [log for log in st.session_state.garden_data["logs"] if log["batch_key"] == selected_key]
-        logs = sorted(logs, key=lambda x: x["date"])
+    section_data = st.session_state.garden_data["layout"][selected_section]
+    rows = st.number_input("Rows", 1, 10, section_data["rows"])
+    cols = st.number_input("Cols", 1, 10, section_data["cols"])
+    if rows != section_data["rows"] or cols != section_data["cols"]:
+        section_data["rows"], section_data["cols"] = rows, cols
+        section_data["grid"] = [[[] for _ in range(cols)] for _ in range(rows)]
 
-        st.subheader(f"🪴 Timeline for {selected_key}")
-        for log in logs:
-            st.markdown(f"**📅 {log['date']} — {log['action']}**")
-            st.write(f"🗺️ Section: {log['section']}")
-            st.write(f"🌿 Plant: {log['plant']}")
-            st.write(f"💬 Notes: {log['notes'] or '-'}")
-            st.write(f"📏 Height: {log['metrics']['height_cm']} cm | 💧 Moisture: {log['metrics']['moisture_%']}%")
-            st.write(f"🔔 Next Visit: {log['next_visit']}")
-            st.markdown("---")
-
-# =======================================================
-# 🧩 GARDEN LAYOUT PAGE
-# =======================================================
-elif page == "Garden Layout":
-    st.header("🧩 Garden Layout Designer")
-
-    sections = list(st.session_state.garden_data["layout"].keys())
-    new_section = st.text_input("Add new section name")
-
-    if st.button("➕ Add Section"):
-        if new_section:
-            st.session_state.garden_data["layout"][new_section] = {"rows": 3, "cols": 3, "grid": [["" for _ in range(3)] for _ in range(3)]}
-            st.success(f"Added new section: {new_section}")
-
-    selected_section = st.selectbox("Select Section", sections if sections else ["No sections yet"])
-
-    if selected_section != "No sections yet":
-        section_data = st.session_state.garden_data["layout"][selected_section]
-        rows = st.number_input("Rows", min_value=1, max_value=10, value=section_data["rows"])
-        cols = st.number_input("Columns", min_value=1, max_value=10, value=section_data["cols"])
-
-        if rows != section_data["rows"] or cols != section_data["cols"]:
-            section_data["rows"], section_data["cols"] = rows, cols
-            section_data["grid"] = [["" for _ in range(cols)] for _ in range(rows)]
-
-        st.markdown("### 🌿 Click below to assign what’s sown in each tile")
-        
     batch_keys = sorted(set([log["batch_key"] for log in st.session_state.garden_data["logs"]]))
 
+    # Legend
+    st.subheader("🗝️ Legend / Key")
+    if batch_keys:
+        legend_html = ""
+        for k in batch_keys:
+            color = get_color_for_key(k)
+            legend_html += f'<span style="background-color:{color}; padding:4px 8px; margin:2px; border-radius:4px; display:inline-block;">{k}</span>'
+        st.markdown(legend_html, unsafe_allow_html=True)
+    st.caption("Hover over a tile to see batch metrics. Avg height/moisture shown for multi-batch tiles.")
+
+    # Animation slider
+    all_dates = sorted([datetime.date.fromisoformat(log["date"]) for log in st.session_state.garden_data["logs"]])
+    if all_dates:
+        min_date, max_date = all_dates[0], all_dates[-1]
+    else:
+        min_date = max_date = datetime.date.today()
+    animation_date = st.slider(
+        "🕒 Select Date to Animate",
+        min_value=min_date,
+        max_value=max_date,
+        value=max_date,
+        format="YYYY-MM-DD"
+    )
+    st.session_state.animation_date = animation_date
+
+    # Render tiles
     for r in range(section_data["rows"]):
         cols_container = st.columns(section_data["cols"])
         for c in range(section_data["cols"]):
@@ -221,8 +289,7 @@ elif page == "Garden Layout":
                 current_values = section_data["grid"][r][c]
                 if not isinstance(current_values, list):
                     current_values = [current_values] if current_values else []
-    
-                # Multi-select batch keys for this tile
+
                 selected_keys = st.multiselect(
                     f"({r+1},{c+1})",
                     options=batch_keys,
@@ -230,23 +297,75 @@ elif page == "Garden Layout":
                     key=f"{selected_section}_{r}_{c}"
                 )
                 section_data["grid"][r][c] = selected_keys
-    
-                # Display color tags for selected batch keys
-                if selected_keys:
-                    color_tags = "".join(
-                        f'<span style="background-color:{get_color_for_key(k)}; '
-                        f'padding:3px 6px; border-radius:4px; margin:2px; display:inline-block;">{k}</span>'
-                        for k in selected_keys
-                    )
-                    st.markdown(color_tags, unsafe_allow_html=True)
-        st.success("✅ Layout updated! Don’t forget to download JSON to save it permanently.")
 
-# =======================================================
-# 💾 DOWNLOAD
-# =======================================================
-st.sidebar.download_button(
-    label="💾 Download Garden Data",
-    data=json.dumps(st.session_state.garden_data, indent=2),
-    file_name=f"garden_log_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.json",
-    mime="application/json"
-)
+                # Aggregated tooltip
+                tooltip_html = ""
+                heights, moistures = [], []
+                for k in selected_keys:
+                    batch_logs = [log for log in st.session_state.garden_data["logs"]
+                                  if log["batch_key"] == k and datetime.date.fromisoformat(log["date"]) <= animation_date]
+                    if batch_logs:
+                        last_log = sorted(batch_logs, key=lambda x: x["date"])[-1]
+                        heights.append(last_log["metrics"].get("height_cm", 0))
+                        moistures.append(last_log["metrics"].get("moisture_%", 0))
+                        action = last_log.get("action", "")
+                        date = last_log.get("date", "")
+                        notes = last_log.get("notes", "")
+                        batch_tooltip = f"{k}: {action} on {date}, Height: {last_log['metrics'].get('height_cm','—')} cm, Moisture: {last_log['metrics'].get('moisture_%','—')}%, Notes: {notes}"
+                        batch_color = get_color_for_key(k)
+                        if k == st.session_state.get("selected_batch"):
+                            style = f"background-color:{batch_color}; padding:3px 6px; border-radius:6px; margin:2px; display:inline-block; border:3px solid black;"
+                        else:
+                            style = f"background-color:{batch_color}; padding:3px 6px; border-radius:4px; margin:2px; display:inline-block;"
+                        tooltip_html += f'<span style="{style}" title="{batch_tooltip}">{k}</span>'
+                # Aggregated metrics
+                if heights or moistures:
+                    avg_height = sum(heights)/len(heights) if heights else "—"
+                    avg_moisture = sum(moistures)/len(moistures) if moistures else "—"
+                    tooltip_html = f'<div title="Avg Height: {avg_height:.1f} cm, Avg Moisture: {avg_moisture:.1f}%">{tooltip_html}</div>'
+
+                if tooltip_html:
+                    st.markdown(tooltip_html, unsafe_allow_html=True)
+
+# ----------------------------------------------------------------
+# 🌱 PAGE 4: INVENTORY
+# ----------------------------------------------------------------
+elif page == "🌱 Inventory":
+    st.header("🌱 Manage Inventory")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Add Vegetable / Fruit")
+        item_type = st.selectbox("Type", ["Vegetable", "Fruit"])
+        item_name = st.text_input("Name of the plant")
+        if st.button("Add to Inventory"):
+            if item_name:
+                st.session_state.garden_data["inventory"][item_type.lower() + "s"].append(item_name)
+                st.success(f"Added {item_name} to {item_type.lower()} inventory")
+
+    with col2:
+        st.subheader("Current Inventory")
+        st.json(st.session_state.garden_data["inventory"])
+
+# ----------------------------------------------------------------
+# 🔧 PAGE 5: JSON EDITOR
+# ----------------------------------------------------------------
+elif page == "🔧 JSON Editor":
+    st.header("🔧 Advanced JSON Editor")
+    live_json = {**st.session_state.garden_data, "batch_colors": st.session_state.batch_colors}
+    json_text = st.text_area("Garden Data (editable JSON)", json.dumps(live_json, indent=2), height=500)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save JSON Changes"):
+            try:
+                new_data = json.loads(json_text)
+                if "batch_colors" in new_data:
+                    st.session_state.batch_colors = new_data.pop("batch_colors")
+                st.session_state.garden_data = new_data
+                st.success("✅ JSON updated successfully!")
+            except json.JSONDecodeError as e:
+                st.error(f"❌ Invalid JSON: {e}")
+    with col2:
+        if st.button("🔁 Reset View"):
+            st.experimental_rerun()
